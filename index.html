@@ -617,6 +617,12 @@ function logHud(){
 /* ===================== VOICE (restore+expanded mapping) ===================== */
 let recognition = null;
 let voiceLog = [];
+  /* === v1.0.2-hotfix voiceLog GC (ADD ONLY) === */
+setInterval(()=>{
+  if(voiceLog.length > 120){
+    voiceLog.splice(0, 10); // drop oldest 10
+  }
+}, 30000);
 let voiceRunning = false;
 let voiceRestartCount = 0;
 let lastVoiceError = '';

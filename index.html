@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>HALLO v1.0.1</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+body{
+  margin:0;
+  background:#000;
+  color:#fff;
+  font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+#titleBar{
+  position:absolute; top:0; left:0; right:0;
+  padding:8px 12px;
+  background:rgba(0,0,0,0.7);
+  z-index:30;
+}
+#titleBar b{font-size:16px;}
+#container{
+  position:relative;
+  width:100vw; height:100vh;
+  overflow:hidden;
+}
+video,canvas{
+  position:absolute;
+  top:0; left:0;
+  width:100%; height:100%;
+  object-fit:cover;
+}
+#menuWrapper{
+  position:absolute; top:52px; right:10px;
+  z-index:40;
+}
+#menuToggle{
+  background:#444; color:#fff;
+  border:none; border-radius:8px;
+  font-size:18px; padding:8px 12px;
+}
+#menuPanel{
+  position:absolute; right:0; margin-top:8px;
+  width:280px;
+  background:#333;
+  border:1px solid #555;
+  border-radius:10px;
+  padding:10px;
+}
+.hidden{display:none;}
+.menu-section{margin-bottom:12px;}
+.menu-section h3{margin:0 0 6px;font-size:13px;}
+select,button.menuBtn{
+  width:100%; padding:8px;
+  border-radius:8px;
+  border:1px solid rgba(255,255,255,0.2);
+  background:rgba(255,255,255,0.1);
+  color:#fff;
+}
+#coursePanel{
+  position:absolute; left:0; right:0; bottom:0;
+  background:rgba(0,0,0,0.7);
+  border-top:1px solid rgba(255,255,255,0.2);
+  padding:10px 12px;
+  z-index:25;
+}
+#coursePanel.hidden{display:none;}
+.checkbox{margin-top:6px;font-size:14px;}
+#debugHud{
+  position:absolute; top:60px; left:10px; right:10px;
+  max-height:70vh; overflow:auto;
+  background:rgba(0,0,0,0.85);
+  border:1px solid rgba(255,255,255,0.2);
+  border-radius:10px;
+  padding:10px;
+  z-index:100;
+  font-family:monospace;
+  font-size:12px;
+}
+#debugHud.hidden{display:none;}
+pre{white-space:pre-wrap;}
+</style>
+</head>
+
+<body>
+<div id="container">
+  <div id="titleBar">
+    <b>HALLO</b><br>
+    Visual & voice-guided prototype for myoelectric prosthesis training
+  </div>
+
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="overlay"></canvas>
+
+  <!-- MENU -->
+  <div id="menuWrapper">
+    <button id="menuToggle">☰</button>
+    <div id="menuPanel" class="hidden">
+      <div class="menu-section">
+        <h3>Camera</h3>
+        <select id="cameraFacing">
+          <option value="environment">Back</option>
+          <option value="user">Front</option>
+        </select>
+      </div>
+      <div class="menu-section">
+        <h3>Amputation side (green)</h3>
+        <select id="ampSide">
+          <option value="left">Left</option>
+          <option value="right">Right</option>
+        </select>
+      </div>
+      <div class="menu-section">
+        <h3>Course</h3>
+        <button class="menuBtn" id="btnBeginner">Beginner</button>
+        <button class="menuBtn" id="btnIntermediate" style="margin-top:6px;">Intermediate</button>
+      </div>
+      <div class="menu-section">
+        <h3>Debug</h3>
+        <button class="menuBtn" id="btnDebug">Toggle DEBUG HUD</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COURSE PANEL -->
+  <div id="coursePanel" class="hidden">
+    <div id="courseTitle" style="font-weight:700"></div>
+    <div id="courseText" style="font-size:14px;line-height:1.4"></div>
+    <div id="courseBody"></div>
+  </div>
+
+  <!-- DEBUG HUD -->
+  <div id="debugHud" class="hidden">
+    <pre id="debugText"></pre>
+  </div>
+</div>
+
+<script>
+/* ---------- MENU ---------- */
+menuToggle.onclick=()=>menuPanel.classList.toggle('hidden');
+
+/* ---------- CAMERA ---------- */
+const video=document.getElementById('video');
+const overlay=document.getElementById('overlay');
+const ctx=overlay.getContext('2d');
+const cameraFacing=document.getElementById('cameraFacing');
+let stream=null;
+async function startCamera(){
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  stream=await navigator.mediaDevices.getUserMedia({
+    video:{facingMode:{ideal:cameraFacing.value}},
+    audio:false
+  });
+  video.srcObject=stream;
+}
+cameraFacing.onchange=startCamera;
+startCamera();
+
+/* ---------- STATE ---------- */
+let elbow="extend";   // extend / flex
+let hand="open";      // open / close
+let lastInput="none";
+
+/* ---------- DRAWING ---------- */
+function draw(){
+  overlay.width=overlay.clientWidth;
+  overlay.height=overlay.clientHeight;
+  ctx.clearRect(0,0,overlay.width,overlay.height);
+
+  const W=overlay.width, H=overlay.height;
+  const L=Math.min(W,H)*0.7;
+  const cx=W/2, cy=H/2;
+  const topY=cy-L/2, bottomY=cy+L/2;
+  const shoulderY=topY+L/5;
+  const half=L/2;
+  const armLen=L*0.4;
+  const elbowR=L*0.03;
+
+  // torso
+  ctx.strokeStyle="rgba(255,255,255,0.3)";
+  ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(cx,topY); ctx.lineTo(cx,bottomY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx-half,shoulderY); ctx.lineTo(cx+half,shoulderY); ctx.stroke();
+
+  function drawArm(sx,isAmp){
+    const color=isAmp?"#9aff00":"white";
+    ctx.strokeStyle=color;
+    ctx.lineWidth=4;
+
+    // upper arm
+    ctx.beginPath(); ctx.moveTo(sx,shoulderY); ctx.lineTo(sx,shoulderY+armLen); ctx.stroke();
+
+    const ex=sx, ey=shoulderY+armLen;
+    ctx.beginPath(); ctx.arc(ex,ey,elbowR,0,Math.PI*2); ctx.stroke();
+
+    // forearm visual
+    let hy=ey;
+    if(elbow==="flex") hy=ey-armLen*0.6;
+
+    if(isAmp){
+      // hand open / close (always 2 lines)
+      ctx.strokeStyle=isAmp?"#9aff00":"white";
+      const angle = hand==="open" ? 35 : 12;
+      const len=elbowR*3;
+      ctx.beginPath();
+      ctx.moveTo(ex,hy);
+      ctx.lineTo(ex-Math.sin(angle*Math.PI/180)*len,hy+Math.cos(angle*Math.PI/180)*len);
+      ctx.moveTo(ex,hy);
+      ctx.lineTo(ex+Math.sin(angle*Math.PI/180)*len,hy+Math.cos(angle*Math.PI/180)*len);
+      ctx.stroke();
+    }
+  }
+
+  const leftAmp=ampSide.value==="left";
+  const rightAmp=ampSide.value==="right";
+  drawArm(cx-half,leftAmp);
+  drawArm(cx+half,rightAmp);
+
+  requestAnimationFrame(draw);
+}
+draw();
+
+/* ---------- COURSE UI ---------- */
+btnBeginner.onclick=()=>{
+  stopVoice();
+  courseTitle.textContent="Beginner course";
+  courseText.innerHTML=
+  `Sit on a chair and place your phone on a table.<br>
+   Bend your elbow: the rising muscle is <b>biceps</b>.<br>
+   Extend your elbow: the rising muscle is <b>triceps</b>.`;
+  courseBody.innerHTML=
+  `<div class="checkbox"><label><input type="checkbox"> I identified biceps.</label></div>
+   <div class="checkbox"><label><input type="checkbox"> I identified triceps.</label></div>
+   <div class="checkbox"><label><input type="checkbox"> I am seated with the phone on a table.</label></div>`;
+  coursePanel.classList.remove('hidden');
+  menuPanel.classList.add('hidden');
+};
+
+btnIntermediate.onclick=()=>{
+  courseTitle.textContent="Intermediate course";
+  courseText.innerHTML=
+  `Speak slowly while watching the screen.<br>
+   <b>Biceps / One / ぱー</b> → flex & close<br>
+   <b>Triceps / Two / Go / ぐー</b> → extend & open`;
+  courseBody.innerHTML=`<div id="voiceStatus"></div>`;
+  coursePanel.classList.remove('hidden');
+  menuPanel.classList.add('hidden');
+  startVoice();
+};
+
+/* ---------- DEBUG HUD ---------- */
+btnDebug.onclick=()=>debugHud.classList.toggle('hidden');
+
+/* ---------- VOICE ---------- */
+let recognition=null;
+let voiceLog=[];
+function logVoice(s){
+  voiceLog.push(s);
+  debugText.textContent=
+`Device:
+ UA: ${navigator.userAgent}
+ SecureContext: ${isSecureContext}
+
+Program:
+ Elbow: ${elbow}
+ Hand: ${hand}
+ LastInput: ${lastInput}
+
+Voice log:
+${voiceLog.join("\n")}`;
+}
+
+function parseSpeech(t){
+  t=t.toLowerCase();
+  if(/biceps|bicep|one|ぱ/.test(t)){
+    elbow="flex"; hand="close"; lastInput="voice flex";
+  }
+  if(/triceps|two|go|good|google|ぐ/.test(t)){
+    elbow="extend"; hand="open"; lastInput="voice extend";
+  }
+}
+
+async function warmupMic(){
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({audio:true});
+    s.getTracks().forEach(t=>t.stop());
+    logVoice("Mic warm-up: success");
+  }catch(e){ logVoice("Mic warm-up error:"+e.name); }
+}
+
+function startVoice(){
+  stopVoice();
+  warmupMic();
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ logVoice("SpeechRecognition not supported"); return; }
+  recognition=new SR();
+  recognition.lang="en-US";
+  recognition.continuous=true;
+  recognition.onstart=()=>logVoice("onstart");
+  recognition.onaudiostart=()=>logVoice("onaudiostart");
+  recognition.onspeechstart=()=>logVoice("onspeechstart");
+  recognition.onresult=e=>{
+    const r=e.results[e.results.length-1][0];
+    logVoice(`heard: "${r.transcript}" conf=${r.confidence}`);
+    parseSpeech(r.transcript);
+  };
+  recognition.onerror=e=>logVoice("error: "+e.error);
+  recognition.onend=()=>logVoice("onend");
+  recognition.start();
+}
+
+function stopVoice(){
+  if(recognition){ recognition.stop(); recognition=null; }
+}
+</script>
+</body>
+</html>

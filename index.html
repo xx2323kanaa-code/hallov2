@@ -159,6 +159,18 @@ pre { white-space:pre-wrap; }
 
 /* Small status pill */
 #pill{
+  /* === v1.0.2-hotfix UI overlap guard (ADD ONLY) === */
+#titleBar {
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+
+#pill {
+  max-width: calc(100vw - 80px); /* avoid menu button */
+  white-space: normal;
+}
+
   display:inline-block;
   margin-top:4px;
   padding:3px 8px;
